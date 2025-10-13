@@ -16,7 +16,7 @@ from datetime import datetime
 
 ############### Main Script ###################
 
-def process_file(file_path, thickness, diameter, output_dynamic_folder=None):
+def process_file(file_path, thickness, diameter, output_dynamic_folder=None, output_combined_folder=None):
     """Process a single mechanical test file and return calculated parameters"""
     
     # extract df from csv file
@@ -147,11 +147,50 @@ def process_file(file_path, thickness, diameter, output_dynamic_folder=None):
         'Dynamic_Modulus': dyn_modulus
     }
     
+    # Export combined smoothed ramp-relaxation + raw dynamic data
+    if output_combined_folder is not None:
+        print(f"  DEBUG: output_combined_folder = {output_combined_folder}")
+        print(f"  DEBUG: ramp_rel_df empty? {ramp_rel_df.empty}, size = {len(ramp_rel_df)}")
+        print(f"  DEBUG: dyn_df empty? {dyn_df.empty}, size = {len(dyn_df)}")
+        
+        filename_base = os.path.splitext(os.path.basename(file_path))[0]
+        
+        # Prepare ramp-relaxation data with smoothed stress
+        if not ramp_rel_df.empty:
+            print(f"  DEBUG: Preparing ramp data for export...")
+            ramp_export = ramp_rel_df[['Elapsed Time', 'Load 3', 'Disp', 'Stress_smooth', 'Strain']].copy()
+            ramp_export.rename(columns={'Stress_smooth': 'Stress'}, inplace=True)
+            print(f"  DEBUG: Ramp export prepared, size = {len(ramp_export)}")
+            
+            # Prepare dynamic data (raw, no smoothing)
+            if not dyn_df.empty:
+                print(f"  DEBUG: Preparing dynamic data for export...")
+                dyn_export = dyn_df[['Elapsed Time', 'Load 3', 'Disp', 'Stress', 'Strain']].copy()
+                print(f"  DEBUG: Dynamic export prepared, size = {len(dyn_export)}")
+                
+                # Combine the two dataframes
+                combined_df = pd.concat([ramp_export, dyn_export], ignore_index=True)
+                print(f"  DEBUG: Combined df created, size = {len(combined_df)}")
+            else:
+                # If no dynamic data, just export ramp-relaxation
+                print(f"  DEBUG: No dynamic data, using only ramp data")
+                combined_df = ramp_export
+            
+            # Export to CSV
+            combined_csv_path = output_combined_folder / f'{filename_base}_combined.csv'
+            print(f"  DEBUG: Attempting to save to: {combined_csv_path}")
+            combined_df.to_csv(combined_csv_path, index=False)
+            print(f"  Exported combined data to: {combined_csv_path.name}")
+        else:
+            print(f"  WARNING: No ramp-relaxation data to export for combined file")
+    else:
+        print(f"  DEBUG: output_combined_folder is None!")
+    
     return results
 
 def main():
     # Set up folder paths
-    folder_path = r'C:\Users\mbgm4fs3\OneDrive - The University of Manchester\PhD\Experimental\Data\1. Process optimisation\Mech testing\Final data\800_raw'
+    folder_path = r'C:\Users\mbgm4fs3\OneDrive - The University of Manchester\PhD\Experimental\Data\1. Process optimisation\Mech testing\Final data\gel_raw'
     dimensions_path = Path(folder_path) / 'dimensions' / 'sample_dimensions_config.csv'
     
     # Create output path for results
@@ -161,6 +200,10 @@ def main():
     # Create output folder for dynamic data CSVs
     dynamic_data_folder = Path(folder_path) / 'dynamic_data'
     dynamic_data_folder.mkdir(exist_ok=True)
+    
+    # Create output folder for combined data CSVs
+    combined_data_folder = Path(folder_path) / 'combined_data'
+    combined_data_folder.mkdir(exist_ok=True)
     
     # Generate output filename with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -203,7 +246,9 @@ def main():
         
         try:
             # Process the file and get results
-            results = process_file(file_path, thickness, diameter, output_dynamic_folder=dynamic_data_folder)
+            results = process_file(file_path, thickness, diameter, 
+                                  output_dynamic_folder=dynamic_data_folder,
+                                  output_combined_folder=combined_data_folder)
             all_results.append(results)
             print(f"  Processing completed successfully")
         except Exception as e:
@@ -217,6 +262,7 @@ def main():
         results_df.to_excel(output_file, index=False)
         print(f"\nResults saved to {output_file}")
         print(f"Dynamic data CSVs saved to {dynamic_data_folder}")
+        print(f"Combined data CSVs saved to {combined_data_folder}")
     else:
         print("No results were successfully processed")
 
